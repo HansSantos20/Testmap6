@@ -1,0 +1,137 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2024 Presidential Election Map</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; }
+    .map { display: flex; justify-content: center; align-items: center; }
+    .state { stroke: #fff; stroke-width: 1; cursor: pointer; }
+    .candidate { margin: 10px; padding: 10px; display: inline-block; }
+    .electoral-votes { font-size: 24px; font-weight: bold; }
+    .bar { height: 20px; width: 500px; margin: 0 auto; background: #ddd; display: flex; }
+    .bar-segment { height: 100%; }
+    #harris-bar { background: blue; }
+    #trump-bar { background: red; }
+    .map-container { position: relative; }
+    svg { max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <h1>2024 Presidential Election</h1>
+  <div class="candidate">
+    <img src="https://via.placeholder.com/50" alt="Kamala Harris" style="border-radius: 50%;"> Kamala Harris
+    <div id="harris-votes" class="electoral-votes">187</div>
+    <div id="harris-percent">47.0%</div>
+  </div>
+  <div class="bar">
+    <div id="harris-bar" class="bar-segment" style="width: 47%;"></div>
+    <div id="trump-bar" class="bar-segment" style="width: 53%;"></div>
+  </div>
+  <div class="candidate">
+    <img src="https://via.placeholder.com/50" alt="Donald Trump" style="border-radius: 50%;"> Donald Trump
+    <div id="trump-votes" class="electoral-votes">230</div>
+    <div id="trump-percent">53.0%</div>
+  </div>
+  <div class="map-container">
+    <svg width="800" height="500" viewBox="0 0 960 600">
+      <!-- State paths (simplified, replace with actual SVG paths) -->
+      <path class="state" d="M100,100 L120,80..." fill="blue" data-state="CA" data-votes="47" />
+      <path class="state" d="M150,100 L170,80..." fill="red" data-state="TX" data-votes="29" />
+      <!-- Add all 50 states with accurate SVG paths and colors based on data -->
+    </svg>
+  </div>
+
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script>
+    let gapi = window.gapi;
+    let spreadsheetId = 'YOUR_SPREADSHEET_ID'; // Replace with your Google Sheet ID
+    let apiKey = 'YOUR_API_KEY'; // Replace with your API key
+
+    function initClient() {
+      gapi.client.init({
+        apiKey: apiKey,
+        discoveryDocs: ["https://sheets.googleapis.com/$discovery/rest?version=v4"],
+      }).then(() => {
+        loadSheetData();
+      });
+    }
+
+    function loadSheetData() {
+      gapi.client.sheets.spreadsheets.values.get({
+        spreadsheetId: spreadsheetId,
+        range: 'Sheet1!A:E', // Adjust range to match your data
+      }).then((response) => {
+        const data = response.result.values;
+        updateMap(data);
+      }, (error) => {
+        console.error('Error loading data:', error);
+      });
+    }
+
+    function updateMap(data) {
+      let harrisVotes = 0, trumpVotes = 0;
+      data.forEach(row => {
+        if (row[0] === 'YEAR') return; // Skip header
+        const state = row[1];
+        const votes = parseInt(row[3]);
+        const winner = row[14]; // Assuming WINNER column
+        const stateElement = document.querySelector(`.state[data-state="${state}"]`);
+        if (stateElement) {
+          stateElement.setAttribute('fill', winner === 'Kamala Harris' ? 'blue' : 'red');
+          if (winner === 'Kamala Harris') harrisVotes += votes;
+          else trumpVotes += votes;
+        }
+      });
+      document.getElementById('harris-votes').textContent = harrisVotes;
+      document.getElementById('trump-votes').textContent = trumpVotes;
+      document.getElementById('harris-percent').textContent = ((harrisVotes / (harrisVotes + trumpVotes) * 100) || 0).toFixed(1) + '%';
+      document.getElementById('trump-percent').textContent = ((trumpVotes / (harrisVotes + trumpVotes) * 100) || 0).toFixed(1) + '%';
+      document.getElementById('harris-bar').style.width = harrisVotes / (harrisVotes + trumpVotes) * 100 + '%';
+      document.getElementById('trump-bar').style.width = trumpVotes / (harrisVotes + trumpVotes) * 100 + '%';
+    }
+
+    gapi.load('client', initClient);
+  </script>
+</body>
+</html>
